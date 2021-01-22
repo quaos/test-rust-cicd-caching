@@ -1,0 +1,73 @@
+variables:
+  DOCKER_BUILDKIT: 1
+  BACKEND_IMAGE_NAME: q-test-rust-cicd-caching
+  IMAGE_TAG: latest
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - "target"
+    - "temp/.cargo"
+
+stages:
+  - test
+  - build
+
+test_backend:
+  stage: test
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}"
+    paths:
+      - "target"
+      - "temp/.cargo"
+  script:
+    - mkdir -p target
+    - mkdir -p temp/.cargo
+    # TEST
+    - >-
+      echo "# BEFORE test_backend {";
+      echo "target/:"; ls -l target/;
+      echo "temp/.cargo/:"; ls -l temp/.cargo/;
+      echo "# }"
+    - >-
+      docker build . --progress=plain
+      --build-arg CARGO_HOME=/cargo
+      --build-arg APP_SRC_PATH=/app
+      -t $BACKEND_IMAGE_NAME:$IMAGE_TAG-test --target test
+    - CID=$(docker create $BACKEND_IMAGE_NAME:$IMAGE_TAG-test)
+    - docker cp ${CID}:/cargo/. temp/.cargo
+    - docker cp ${CID}:/app/target/. target
+    - docker rm ${CID}
+    # TEST
+    - >-
+      echo "# AFTER test_backend {";
+      echo "target/:"; ls -l target/;
+      echo "temp/.cargo/:"; ls -l temp/.cargo/;
+      echo "# }"
+    # Need SALE_CHANNEL env for some test cases
+    - >-
+      docker run --rm -e DATABASE_URL="postgres://postgres:postgres@$POSTGRES_PORT_5432_TCP_ADDR:5432/saletool_test" 
+      -e ENV=test -e SALE_CHANNEL=KBANK
+      $BACKEND_IMAGE_NAME:$IMAGE_TAG-test
+
+build_backend:
+  stage: build
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}"
+    paths:
+      - "target"
+      - "temp/.cargo"
+  script:
+    - mkdir -p target
+    - mkdir -p temp/.cargo
+    # TEST
+    - >-
+      echo "# BEFORE build_backend {";
+      echo "target/:"; ls -l target/;
+      echo "temp/.cargo/:"; ls -l temp/.cargo/;
+      echo "# }"
+    - >-
+      docker build . --progress=plain
+      --build-arg CARGO_HOME=/cargo
+      -t $BACKEND_IMAGE_NAME:$IMAGE_TAG --target server
+
