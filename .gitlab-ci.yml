@@ -15,35 +15,103 @@ stages:
 
 test_backend:
   stage: test
-  cache:
-    key: "${CI_COMMIT_REF_SLUG}"
-    paths:
-      - "target"
-      - "temp/.cargo"
+  # cache:
+  #   key: "${CI_COMMIT_REF_SLUG}"
+  #   paths:
+  #     - "target"
+  #     - "temp/.cargo"
   script:
-    - mkdir -p target
-    - mkdir -p temp/.cargo
+    # builder_base
+    - docker pull rust:1.48-slim || true
+    - docker pull $BACKEND_IMAGE_NAME-builder-base:latest || true
+    - >-
+      time docker build . --progress=plain
+      --cache-from=rust:1.48-slim
+      --cache-from=$BACKEND_IMAGE_NAME-builder-base:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME-builder-base:latest
+      -t $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG --target builder_base
+    - docker push $BACKEND_IMAGE_NAME-builder-base:latest
+    - docker push $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+    # builder_tools
+    - docker pull $BACKEND_IMAGE_NAME-builder-tools:latest || true
+    - >-
+      time docker build . --progress=plain
+      --cache-from=rust:1.48-slim
+      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME-builder-tools:latest
+      -t $BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG --target builder_tools
+    - docker push $BACKEND_IMAGE_NAME-builder-tools:latest
+    - docker push $BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
+    # deps
+    - docker pull $BACKEND_IMAGE_NAME-deps:latest || true
+    - >-
+      time docker build . --progress=plain
+      --cache-from=rust:1.48-slim
+      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-deps:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME-deps:latest
+      -t $BACKEND_IMAGE_NAME-deps:$IMAGE_TAG --target deps
+    - docker push $BACKEND_IMAGE_NAME-deps:latest
+    - docker push $BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
+    # source
+    - docker pull $BACKEND_IMAGE_NAME-source:latest || true
+    - >-
+      time docker build . --progress=plain
+      --cache-from=rust:1.48-slim
+      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-source:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME-source:latest
+      -t $BACKEND_IMAGE_NAME-source:$IMAGE_TAG --target source
+    - docker push $BACKEND_IMAGE_NAME-source:latest
+    - docker push $BACKEND_IMAGE_NAME-source:$IMAGE_TAG
+    # test
+    - docker pull $BACKEND_IMAGE_NAME-test:latest || true
+    - >-
+      time docker build . --progress=plain
+      --cache-from=rust:1.48-slim
+      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-source:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-test:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME-test:latest
+      -t $BACKEND_IMAGE_NAME-test:$IMAGE_TAG --target test
+    - docker push $BACKEND_IMAGE_NAME-test:latest
+    - docker push $BACKEND_IMAGE_NAME-test:$IMAGE_TAG
+    # - mkdir -p target
+    # - mkdir -p temp/.cargo
     # TEST
-    - >-
-      echo "# BEFORE test_backend {";
-      echo "target/:"; ls -l target/;
-      echo "temp/.cargo/:"; ls -l temp/.cargo/;
-      echo "# }"
-    - >-
-      docker build . --progress=plain
-      --build-arg CARGO_HOME=/cargo
-      --build-arg APP_SRC_PATH=/app
-      -t $BACKEND_IMAGE_NAME:$IMAGE_TAG-test --target test
-    - CID=$(docker create $BACKEND_IMAGE_NAME:$IMAGE_TAG-test)
-    - docker cp ${CID}:/cargo/. temp/.cargo
-    - docker cp ${CID}:/app/target/. target
-    - docker rm ${CID}
+    # - >-
+    #   echo "# BEFORE test_backend {";
+    #   echo "target/:"; ls -l target/;
+    #   echo "temp/.cargo/:"; ls -l temp/.cargo/;
+    #   echo "# }"
+    # - >-
+    #   docker build . --progress=plain
+    #   --build-arg CRATE_NAME=test_rust_caching
+    #   --build-arg CARGO_PATH=/cargo
+    #   --build-arg APP_SRC_PATH=/app
+    #   -t $BACKEND_IMAGE_NAME:$IMAGE_TAG-test --target test
+    # - CID=$(docker create $BACKEND_IMAGE_NAME:$IMAGE_TAG-test)
+    # - docker cp ${CID}:/cargo/. temp/.cargo
+    # - docker cp ${CID}:/app/target/. target
+    # - docker rm ${CID}
+    # - rm -vfR target/release/deps/test_rust_caching*
     # TEST
-    - >-
-      echo "# AFTER test_backend {";
-      echo "target/:"; ls -l target/;
-      echo "temp/.cargo/:"; ls -l temp/.cargo/;
-      echo "# }"
+    # - >-
+    #   echo "# AFTER test_backend {";
+    #   echo "target/:"; ls -l target/;
+    #   echo "temp/.cargo/:"; ls -l temp/.cargo/;
+    #   echo "# }"
     # Need SALE_CHANNEL env for some test cases
     - >-
       docker run --rm -e DATABASE_URL="postgres://postgres:postgres@$POSTGRES_PORT_5432_TCP_ADDR:5432/saletool_test" 
@@ -58,16 +126,64 @@ build_backend:
       - "target"
       - "temp/.cargo"
   script:
-    - mkdir -p target
-    - mkdir -p temp/.cargo
-    # TEST
+    # builder
+    - docker pull rust:1.48-slim || true
+    - docker pull $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG || true
+    - docker pull $BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG || true
+    - docker pull $BACKEND_IMAGE_NAME-deps:$IMAGE_TAG || true
+    - docker pull $BACKEND_IMAGE_NAME-source:$IMAGE_TAG || true
     - >-
-      echo "# BEFORE build_backend {";
-      echo "target/:"; ls -l target/;
-      echo "temp/.cargo/:"; ls -l temp/.cargo/;
-      echo "# }"
+      time docker build . --progress=plain
+      --cache-from=rust:1.48-slim
+      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-source:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME-builder:latest
+      -t $BACKEND_IMAGE_NAME-builder:$IMAGE_TAG --target builder
+    - docker push $BACKEND_IMAGE_NAME-builder:latest
+    - docker push $BACKEND_IMAGE_NAME-builder:$IMAGE_TAG
+    # runner_base
+    - docker pull debian:buster-slim || true
+    - docker pull $BACKEND_IMAGE_NAME-runner-base:latest || true
     - >-
-      docker build . --progress=plain
-      --build-arg CARGO_HOME=/cargo
+      time docker build . --progress=plain
+      --cache-from=debian:buster-slim
+      --cache-from=$BACKEND_IMAGE_NAME-runner-base:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME-runner-base:latest
+      -t $BACKEND_IMAGE_NAME-runner-base:$IMAGE_TAG --target runner_base
+    - docker push $BACKEND_IMAGE_NAME-runner-base:latest
+    - docker push $BACKEND_IMAGE_NAME-runner-base:$IMAGE_TAG
+    # server
+    - >-
+      time docker build . --progress=plain
+      --cache-from=rust:1.48-slim
+      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-source:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME-builder:$IMAGE_TAG
+      --cache-from=debian:buster-slim
+      --cache-from=$BACKEND_IMAGE_NAME-runner-base:$IMAGE_TAG
+      --cache-from=$BACKEND_IMAGE_NAME:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      -t $BACKEND_IMAGE_NAME:latest
       -t $BACKEND_IMAGE_NAME:$IMAGE_TAG --target server
+    - docker push $BACKEND_IMAGE_NAME:latest
+    - docker push $BACKEND_IMAGE_NAME:$IMAGE_TAG
+    # - mkdir -p target
+    # - mkdir -p temp/.cargo
+    # TEST
+    # - >-
+    #   echo "# BEFORE build_backend {";
+    #   echo "target/:"; ls -l target/;
+    #   echo "temp/.cargo/:"; ls -l temp/.cargo/;
+    #   echo "# }"
+    # - >-
+    #   docker build . --progress=plain
+    #   --build-arg CARGO_HOME=/cargo
+    #   -t $BACKEND_IMAGE_NAME:$IMAGE_TAG --target server
 
