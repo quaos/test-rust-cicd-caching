@@ -1,7 +1,7 @@
 #syntax=docker/dockerfile:1.0-experimental
 
-ARG DOCKER_CACHED_IMAGE_VERSION=6
-ARG APT_BUILD_PREREQ_PKGS="pkg-config=0.29-6 libpq-dev=11.10-0+deb10u1 libssl-dev=1.1.1d-0+deb10u4 rsync=3.1.3-6 tree=1.8.0-1 time=1.7-25.1+b1"
+ARG DOCKER_CACHED_IMAGE_VERSION=1
+ARG APT_BUILD_PREREQ_PKGS="pkg-config=0.29-6 libpq-dev=11.10-0+deb10u1 libssl-dev=1.1.1d-0+deb10u5 rsync=3.1.3-6 tree=1.8.0-1 time=1.7-25.1+b1"
 # libpq is needed for diesel-cli
 ARG APT_RUN_EXTRA_PKGS="curl=7.64.0-4+deb10u1 libpq-dev=11.10-0+deb10u1 rsync=3.1.3-6 tree=1.8.0-1 time=1.7-25.1+b1"
 ARG APP_SRC_PATH="/app"
@@ -13,7 +13,7 @@ ARG CRATE_NAME="test_rust_caching"
 #     https://github.com/rust-lang/rust/issues/40174
 #
 # ** builder_base **
-FROM rust:1.48-slim as builder_base
+FROM rust:1.49-slim as builder_base
 
 ARG DOCKER_CACHED_IMAGE_VERSION
 ARG APT_BUILD_PREREQ_PKGS
@@ -22,8 +22,8 @@ WORKDIR /root
 
 RUN rm -vf /etc/apt/apt.conf.d/docker-clean
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     # (cp -vR /mnt/apt1/* /var/cache/apt/ || true) \
     echo "# DOCKER_CACHED_IMAGE_VERSION=${DOCKER_CACHED_IMAGE_VERSION}"; \
     echo "# Installing APT build-prereq packages"; \
@@ -32,9 +32,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
     && apt-get install --reinstall -y ${APT_BUILD_PREREQ_PKGS} \
     && rm -vfR /var/lib/apt/lists/*
-
-# ** builder_tools **
-FROM builder_base as builder_tools
 
 ENV CARGO_HOME="/usr/local/cargo"
 
@@ -45,24 +42,33 @@ ENV CARGO_HOME="/usr/local/cargo"
 
 COPY rust-toolchain ./
 
-RUN echo "# Installing sccache"; \
-    #TEST
-    tree -L 2 /usr/local/cargo; \
-    set -ex; \
-    # workaround for docker-rust's Cargo malfunctioning install+upgrade behaviour
-    # ref.: https://github.com/rust-lang/docker-rust/issues/70
-    (time cargo install sccache || true; \
-    if [ ! -f /usr/local/cargo/bin/sccache ]; then \
-    echo "failed installing sccache"; exit -1; \
-    fi)
+# RUN echo "# Installing sccache"; \
+#     #TEST
+#     tree -L 2 /usr/local/cargo; \
+#     set -ex; \
+#     # workaround for docker-rust's Cargo malfunctioning install+upgrade behaviour
+#     # ref.: https://github.com/rust-lang/docker-rust/issues/70
+#     (time cargo install sccache || true; \
+#     if [ ! -f /usr/local/cargo/bin/sccache ]; then \
+#     echo "failed installing sccache"; exit -1; \
+#     fi)
 
-RUN mkdir -p /var/cache/sccache
+# RUN mkdir -p /var/cache/sccache
 
-ENV RUSTC_WRAPPER="/usr/local/cargo/bin/sccache"
-ENV SCCACHE_DIR="/var/cache/sccache"
+# ENV RUSTC_WRAPPER="/usr/local/cargo/bin/sccache"
+# ENV SCCACHE_DIR="/var/cache/sccache"
 
 RUN echo "# Installing: rustfmt, clippy" \
     && time rustup component add rustfmt clippy
+
+RUN echo "# Installing cargo-chef"; \
+    # workaround for docker-rust's Cargo malfunctioning install+upgrade behaviour
+    # ref.: https://github.com/rust-lang/docker-rust/issues/70
+    time cargo install cargo-chef \
+    --version 0.1.18 || true; \
+    (if [ ! -f /usr/local/cargo/bin/cargo-chef ]; then \
+    echo "failed installing cargo-chef"; exit -1; \
+    fi)
 
 # NOTE: Q: changed from `master` version to same fixed rev. as in core/Cargo.toml
 RUN echo "# Installing Diesel CLI"; \
@@ -80,8 +86,8 @@ RUN echo "# Installing Diesel CLI"; \
     fi)
 
 
-# ** deps **
-FROM builder_tools as deps
+# ** source **
+FROM builder_base as source
 
 ARG CRATE_NAME
 ARG APP_SRC_PATH
@@ -90,32 +96,44 @@ ENV CARGO_HOME="/usr/local/cargo"
 
 WORKDIR $APP_SRC_PATH
 
+RUN mv -v /root/rust-toolchain ./
+
 COPY Cargo.toml Cargo.lock ./
 #COPY target ./target
 
 # HACK: make rust be able to cache dockerfile
-RUN mkdir -p ./src \
-    && echo "fn main() { println!(\"if you see this, the build broke\") }" >src/main.rs;
+# RUN mkdir -p ./src \
+#     && echo "fn main() { println!(\"if you see this, the build broke\") }" >src/main.rs;
 
-RUN mv -v /root/rust-toolchain ./ \
-    && time cargo build --release \
-    && rm -vfR "./target/release/deps/${CRATE_NAME}"*
+# RUN mv -v /root/rust-toolchain ./ \
+#     && time cargo build --release \
+#     && rm -vfR "./target/release/deps/${CRATE_NAME}"*
 
+# Prepare dependencies
+RUN time cargo chef prepare --recipe-path recipe.json
 
-# ** sources **
-FROM deps as source
+RUN rm -vf Cargo.*
+
+# Build dependencies
+RUN time cargo chef cook --release --recipe-path recipe.json
+
+RUN rm -vfR "./target/release/deps/${CRATE_NAME}"*
 
 COPY src src
 COPY scripts scripts
 
 # HACK: fix cargo+docker file not updated
-RUN touch src/main.rs
+# RUN touch src/main.rs
 
 
 # ** test and lint **
 FROM source as test
 
-ENV CARGO_HOME=/usr/local/cargo
+ARG APP_SRC_PATH
+
+ENV CARGO_HOME="/usr/local/cargo"
+
+WORKDIR $APP_SRC_PATH
 
 # Prevent unformatted code from building & merging
 # RUN --mount=type=cache,target=/usr/local/cargo \
@@ -128,22 +146,28 @@ RUN unformatted_files=$(cargo fmt -- -l --check | wc -l) \
 
 # RUN --mount=type=cache,target=/usr/local/cargo \
 #     --mount=type=cache,target=${APP_SRC_PATH}/target \
-RUN echo "# Running clippy" \
-    && RUST_LOG=info time cargo clippy -v --release --all-features -- -D warnings
+
+# Clippy
+RUN RUST_LOG=info time cargo clippy -v --release --all-features -- -D warnings
 
 CMD ["scripts/test.sh"]
 
 
 # ** builder **
-FROM source as builder
+FROM test as builder
 
-ENV CARGO_HOME=/usr/local/cargo
+ARG APP_SRC_PATH
+
+ENV CARGO_HOME="/usr/local/cargo"
+
+WORKDIR $APP_SRC_PATH
 
 # RUN --mount=type=cache,target=/usr/local/cargo \
 #     tree -L 2 /usr/local/cargo; \
 #     tree -L 3 ./target; \
-RUN echo "# Building crates" \
-    && RUST_LOG=info time cargo build -v --release
+
+# Build crates
+RUN RUST_LOG=info time cargo build -v --release
 
 
 # ** runner_base **
@@ -154,8 +178,8 @@ ARG APT_RUN_EXTRA_PKGS
 
 RUN rm -vf /etc/apt/apt.conf.d/docker-clean
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    --mount=type=cache,target=/var/lib/apt,sharing=private \
     # (cp -vR /mnt/apt2/* /var/cache/apt/ || true) \
     echo "# DOCKER_CACHED_IMAGE_VERSION=${DOCKER_CACHED_IMAGE_VERSION}"; \
     echo "# Installing APT runtime extra packages"; \
@@ -183,12 +207,12 @@ COPY --from=builder ${APP_SRC_PATH}/target/release/${CRATE_NAME} ./myapp
 COPY --from=builder ${APP_SRC_PATH}/scripts ./scripts
 COPY --from=builder ${CARGO_HOME}/bin/diesel ./diesel
 
-RUN echo "# Setting scripts permissions"; \
-    set -ex; \
-    chmod +x ./scripts/*.sh \
+# Set scripts permissions
+RUN chmod +x ./scripts/*.sh \
     # TEST
-    || echo "## WARN: chmod exited with non-zero code: $?; $(ls -al ./scripts/*.sh)"; \
-    chmod +x ./diesel \
+    || echo "## WARN: chmod exited with non-zero code: $?; $(ls -al ./scripts/*.sh)"
+
+RUN chmod +x ./diesel \
     # TEST
     || echo "## WARN: chmod exited with non-zero code: $?; $(ls -al ./diesel)"
 

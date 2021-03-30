@@ -22,51 +22,24 @@ test_backend:
   #     - "temp/.cargo"
   script:
     # builder_base
-    - docker pull rust:1.48-slim || true
+    - docker pull rust:1.49-slim || true
     - docker pull $BACKEND_IMAGE_NAME-builder-base:latest || true
     - >-
       time docker build . --progress=plain
-      --cache-from=rust:1.48-slim
-      --cache-from=$BACKEND_IMAGE_NAME-builder-base:latest
+      --cache-from rust:1.49-slim
+      --cache-from $BACKEND_IMAGE_NAME-builder-base:latest
       --build-arg BUILDKIT_INLINE_CACHE=1
       -t $BACKEND_IMAGE_NAME-builder-base:latest
       -t $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG --target builder_base
     - docker push $BACKEND_IMAGE_NAME-builder-base:latest
     - docker push $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
-    # builder_tools
-    - docker pull $BACKEND_IMAGE_NAME-builder-tools:latest || true
-    - >-
-      time docker build . --progress=plain
-      --cache-from=rust:1.48-slim
-      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:latest
-      --build-arg BUILDKIT_INLINE_CACHE=1
-      -t $BACKEND_IMAGE_NAME-builder-tools:latest
-      -t $BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG --target builder_tools
-    - docker push $BACKEND_IMAGE_NAME-builder-tools:latest
-    - docker push $BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
-    # deps
-    - docker pull $BACKEND_IMAGE_NAME-deps:latest || true
-    - >-
-      time docker build . --progress=plain
-      --cache-from=rust:1.48-slim
-      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-deps:latest
-      --build-arg BUILDKIT_INLINE_CACHE=1
-      -t $BACKEND_IMAGE_NAME-deps:latest
-      -t $BACKEND_IMAGE_NAME-deps:$IMAGE_TAG --target deps
-    - docker push $BACKEND_IMAGE_NAME-deps:latest
-    - docker push $BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
     # source
     - docker pull $BACKEND_IMAGE_NAME-source:latest || true
     - >-
       time docker build . --progress=plain
-      --cache-from=rust:1.48-slim
-      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-source:latest
+      --cache-from rust:1.48-slim
+      --cache-from $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from $BACKEND_IMAGE_NAME-source:latest
       --build-arg BUILDKIT_INLINE_CACHE=1
       -t $BACKEND_IMAGE_NAME-source:latest
       -t $BACKEND_IMAGE_NAME-source:$IMAGE_TAG --target source
@@ -76,10 +49,8 @@ test_backend:
     - docker pull $BACKEND_IMAGE_NAME-test:latest || true
     - >-
       time docker build . --progress=plain
-      --cache-from=rust:1.48-slim
+      --cache-from=rust:1.49-slim
       --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
       --cache-from=$BACKEND_IMAGE_NAME-source:$IMAGE_TAG
       --cache-from=$BACKEND_IMAGE_NAME-test:latest
       --build-arg BUILDKIT_INLINE_CACHE=1
@@ -127,19 +98,15 @@ build_backend:
       - "temp/.cargo"
   script:
     # builder
-    - docker pull rust:1.48-slim || true
+    - docker pull rust:1.49-slim || true
     - docker pull $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG || true
-    - docker pull $BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG || true
-    - docker pull $BACKEND_IMAGE_NAME-deps:$IMAGE_TAG || true
     - docker pull $BACKEND_IMAGE_NAME-source:$IMAGE_TAG || true
     - >-
       time docker build . --progress=plain
-      --cache-from=rust:1.48-slim
-      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-source:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder:latest
+      --cache-from rust:1.49-slim
+      --cache-from $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from $BACKEND_IMAGE_NAME-source:$IMAGE_TAG
+      --cache-from $BACKEND_IMAGE_NAME-builder:latest
       --build-arg BUILDKIT_INLINE_CACHE=1
       -t $BACKEND_IMAGE_NAME-builder:latest
       -t $BACKEND_IMAGE_NAME-builder:$IMAGE_TAG --target builder
@@ -150,8 +117,8 @@ build_backend:
     - docker pull $BACKEND_IMAGE_NAME-runner-base:latest || true
     - >-
       time docker build . --progress=plain
-      --cache-from=debian:buster-slim
-      --cache-from=$BACKEND_IMAGE_NAME-runner-base:latest
+      --cache-from debian:buster-slim
+      --cache-from $BACKEND_IMAGE_NAME-runner-base:latest
       --build-arg BUILDKIT_INLINE_CACHE=1
       -t $BACKEND_IMAGE_NAME-runner-base:latest
       -t $BACKEND_IMAGE_NAME-runner-base:$IMAGE_TAG --target runner_base
@@ -160,15 +127,13 @@ build_backend:
     # server
     - >-
       time docker build . --progress=plain
-      --cache-from=rust:1.48-slim
-      --cache-from=$BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder-tools:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-deps:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-source:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME-builder:$IMAGE_TAG
-      --cache-from=debian:buster-slim
-      --cache-from=$BACKEND_IMAGE_NAME-runner-base:$IMAGE_TAG
-      --cache-from=$BACKEND_IMAGE_NAME:latest
+      --cache-from rust:1.49-slim
+      --cache-from $BACKEND_IMAGE_NAME-builder-base:$IMAGE_TAG
+      --cache-from $BACKEND_IMAGE_NAME-source:$IMAGE_TAG
+      --cache-from $BACKEND_IMAGE_NAME-builder:$IMAGE_TAG
+      --cache-from debian:buster-slim
+      --cache-from $BACKEND_IMAGE_NAME-runner-base:$IMAGE_TAG
+      --cache-from $BACKEND_IMAGE_NAME:latest
       --build-arg BUILDKIT_INLINE_CACHE=1
       -t $BACKEND_IMAGE_NAME:latest
       -t $BACKEND_IMAGE_NAME:$IMAGE_TAG --target server

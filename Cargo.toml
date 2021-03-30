@@ -4,14 +4,32 @@ version = "0.1.0"
 authors = ["Chakrit W <q.chakrit@gettgo.com>"]
 edition = "2018"
 
+[[bin]]
+name = "server"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = '0.1'
+async-graphql = { git = "https://github.com/async-graphql/async-graphql", rev = "e42f5a44778baf6f6e206f3be580a6f982105eee" }
 bigdecimal = { version = "0.2", features = ["serde"] }
 chrono = { version = "0.4",  features = ["serde"] }
+dataloader = { version = "0.12", default-features = false, features = ["runtime-tokio"]}
+diesel = { git = "https://github.com/diesel-rs/diesel", rev = "70ff916", features = ["postgres", "numeric", "chrono", "r2d2", "serde_json", "64-column-tables"] }
+diesel_migrations = { git = "https://github.com/diesel-rs/diesel", rev = "70ff916", features = ["postgres"] }
 env_logger = "0.8"
+futures = "0.3"
+lazy_static = "1.4.0"
 log = "0.4"
+openssl = "0.10"
+rand = "0.7"
+regex = "1"
 serde = { version = "1.0.56", features = ["derive"] }
 serde_json = "1.0"
+serde_urlencoded = "0.7"
+tera = "1.3"
 tokio = { version = '1.0', features = ["full"]}
+ulid = "0.3"
 warp = "^0.3"
+derive_builder = "0.7.0"
